@@ -146,6 +146,3 @@ cluster2_items[[1]][2]
 names(which(clusters == c1))
 
 cbind(cluster1_items, cluster2_items)[1]
-
-antton
-bittor
