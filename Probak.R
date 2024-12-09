@@ -1,4 +1,3 @@
-
 # setwd("/home/andoni/Downloads/Praktika Euskara Dialektoak-20241128T082756Z-001/Praktika Euskara Dialektoak") 
 library(cluster)
 #install.packages('hash')
@@ -107,8 +106,6 @@ kalkulatu_estabilitatea(datubase_matrix, membership, 4, cluster1)
 kalkulatu_bariabilitatea(datubase_matrix, membership, 4, cluster1, cluster2)
 
 kalkulatu_diferentziazioa(datubase_matrix, membership, 4, cluster1, cluster2)
-
-
 
 get_most_relevant_items <- function(datubasea, membership, c1, c2){
     indices1 <- which(clusters == c1)
