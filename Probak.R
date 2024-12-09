@@ -6,6 +6,7 @@ library(hash)
 dist_matrizea <- read.csv("./Datu-basea_ euskalkien ezaugarri adierazgarriak eta bereizgarriak/Matriz-distancias del ESB-Diatech z-24-04-02.csv", row.names=1)
 datubasea <- read.csv("./Datu-basea_ euskalkien ezaugarri adierazgarriak eta bereizgarriak/ESB-datu-basea-taula.csv", row.names=1)
 
+# datubasea
 dist_matrizea <- data.matrix(dist_matrizea)
 d <- as.dist(dist_matrizea)
 #mds.coor <- cmdscale(d)
@@ -107,7 +108,7 @@ kalkulatu_bariabilitatea(datubase_matrix, membership, 4, cluster1, cluster2)
 
 kalkulatu_diferentziazioa(datubase_matrix, membership, 4, cluster1, cluster2)
 
-get_most_relevant_items <- function(datubasea, membership, c1, c2){
+get_most_relevant_items <- function(datubasea, clusters, membership, c1, c2){
     indices1 <- which(clusters == c1)
     indices2 <- which(clusters == c2)
 
@@ -122,18 +123,29 @@ get_most_relevant_items <- function(datubasea, membership, c1, c2){
     sorted_indices <- order(diferentziazioak, decreasing = TRUE)
 
     top3_items <- sorted_indices[1:3]
-    
-    stored_values <- list()
 
-    for (g in top3_items) {
-        row_values <- c(datubase_matrix[g, indices1], datubase_matrix[g, indices2])
-        stored_values[[as.character(g)]] <- row_values
+    cluster1_items <- list()
+    for (i in 1:3){
+        cluster1_items[[i]] <- datubase_matrix[top3_items[i], indices1]
     }
-    stored_matrix <- do.call(rbind, stored_values)
-    return(stored_matrix)
+    cluster2_items <- list()
+    for (i in 1:3){
+        cluster2_items[[i]] <- datubase_matrix[top3_items[i], indices2]
+    }
+
+    return(c(cluster1_items, cluster2_items))
 }
 
 top_items <- get_most_relevant_items(datubase_matrix, membership, 4, 5)
 
-dt_top_items <- as.data.frame(top_items)
-write.csv(dt_top_items, "./top3_items.csv")
+top_items[[1]]
+
+cluster1_items
+cluster2_items[[1]][2]
+
+names(which(clusters == c1))
+
+cbind(cluster1_items, cluster2_items)[1]
+
+antton
+bittor
