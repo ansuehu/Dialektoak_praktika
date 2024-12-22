@@ -22,6 +22,7 @@ clusters <- as.list(fanny_emaitza$clustering)
 
 datubase_matrix <- as.matrix(datubasea)
 
+datubase_matrix
 bilbao_d <- function(items1, items2) {
     bat <- sum(items1 %in% items2) + sum(items2 %in% items1)
     result <- 1 - (bat / (length(items1) + length(items2)))
@@ -136,7 +137,7 @@ get_most_relevant_items <- function(datubasea, clusters, membership, c1, c2){
     return(c(cluster1_items, cluster2_items))
 }
 
-top_items <- get_most_relevant_items(datubase_matrix, membership, 4, 5)
+top_items <- get_most_relevant_items(datubase_matrix, clusters, membership, 4, 5)
 
 top_items[[1]]
 
