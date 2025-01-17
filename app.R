@@ -1,6 +1,7 @@
 library(shiny)
 library(shinyjs)
 library(cluster)
+library(shinycssloaders)
 
 bilbao_d <- function(items1, items2) {
   bat <- sum(items1 %in% items2) + sum(items2 %in% items1)
@@ -81,40 +82,58 @@ kalkulatu_diferentziazioa <- function(datubasea, membership, galdera, cluster1, 
   return(bariabilitatea1_2 / max(estabilitatea1, estabilitatea2, 1e-6))
 }
 
-get_most_relevant_items <- function(datubasea, clusters, membership, c1, c2) {
+get_most_relevant_items <- function(datubasea, questions, data, clusteringResult, c1, c2, n){
+  clusters <- clusteringResult$clustering
+  membership <- clusteringResult$membership
   indices1 <- which(clusters == c1)
   indices2 <- which(clusters == c2)
   
   cluster1 <- list(c1, indices1)
   cluster2 <- list(c2, indices2)
   
-  diferentziazioak <- sapply(seq_len(nrow(datubasea)), function(galdera) {
-    kalkulatu_diferentziazioa(datubasea, membership, galdera, cluster1, cluster2)
-  })
+  diferentziazioak <- numeric(length(datubasea))
   
-  diferentziazioak[is.na(diferentziazioak)] <- -Inf
-  top_indices <- order(diferentziazioak, decreasing = TRUE)[1:3]
+  for (galdera in 1:dim(datubasea)[1]) {
+    diferentziazioak[galdera] <- kalkulatu_diferentziazioa(datubasea, membership, galdera, cluster1, cluster2)
+  }
+  sorted_indices <- order(diferentziazioak, decreasing = TRUE)
   
-  cluster1_items <- lapply(top_indices, function(idx) datubasea[idx, indices1, drop = FALSE])
-  cluster2_items <- lapply(top_indices, function(idx) datubasea[idx, indices2, drop = FALSE])
+  top3_items <- sorted_indices[1:n]
   
-  list(cluster1_items = cluster1_items, cluster2_items = cluster2_items)
-}
+  top_questions <- questions[top3_items]
+  
+  cluster1_items <- datubasea[top3_items, indices1]
+  cluster2_items <- datubasea[top3_items, indices2]
+  
+  xnames <- c(colnames(cluster1_items))
+  ind <- as.integer(sub('.', '', xnames))
+  ind <- ind + 2 
+  colnames(cluster1_items) <- names(data)[ind]
 
+  
+  xnames <- c(colnames(cluster2_items))
+  ind <- as.integer(sub('.', '', xnames))
+  ind <- ind + 2 
+  colnames(cluster2_items) <- names(data)[ind]
+  
+  output <- list("top_questions" = top_questions, "cluster1_items" = cluster1_items, "cluster2_items" = cluster2_items)
+  
+  return(output)
+}
 
 # Define UI for the app
 ui <- fluidPage(
   useShinyjs(),
-  titlePanel("CSV Importer and FANNY Clustering"),
+  titlePanel("Diatech Fuzzy Clustering Demo"),
   div(
     id = "mainPanel",
     sidebarLayout(
       sidebarPanel(
-        fileInput("fileInput", "Choose Data CSV File", accept = ".csv"),
-        fileInput("questionsFile", "Choose Questions CSV File", accept = ".csv"),
-        fileInput("answersFile", "Choose Answers CSV File", accept = ".csv"),
-        numericInput("number_of_clusters", "Number of Clusters:", value = 3, min = 2, step = 1),
-        numericInput("exponential", "Exponential Parameter:", value = 2, min = 1, step = 0.1),
+        fileInput("fileInput", "Import Distance Matrix", accept = ".csv"),
+        fileInput("questionsFile", "Import Questions", accept = ".csv"),
+        fileInput("answersFile", "Import Answers", accept = ".csv"),
+        numericInput("number_of_clusters", "Number of Clusters:", value = 20, min = 2, step = 1),
+        numericInput("exponential", "Exponential Parameter:", value = 1.2, min = 1, step = 0.1),
         actionButton("performClustering", "Perform Clustering")
       ),
       mainPanel(
@@ -126,16 +145,26 @@ ui <- fluidPage(
   hidden(
     div(
       id = "clusteringPanel",
-      selectInput("cluster1", "Select Cluster 1:", choices = NULL, multiple = FALSE),
-      selectInput("cluster2", "Select Cluster 2:", choices = NULL, multiple = FALSE),
+      selectInput("cluster1", "Select Cluster 1:", choices = 1, multiple = FALSE),
+      selectInput("cluster2", "Select Cluster 2:", choices = 2, multiple = FALSE),
       actionButton("compareClusters", "Compare Clusters"),
-      actionButton("backButton", "Back")
+      actionButton("backToMainPanel", "Back")
     )
   ),
   hidden(
     div(
       id = "comparisonPanel",
-      verbatimTextOutput("comparisonDetails"),
+      h3("Relevant Questions", style = "padding: 10px;"),
+      withSpinner(DT::dataTableOutput("topQuestionsTable")),
+      h3("Cluster Items for Selected Question", style = "padding: 10px;"),
+      div(
+        style = "padding: 10px;",
+        h4("Cluster 1 Items"),
+        tableOutput("cluster1Table"),  # Table for Cluster 1
+        
+        h4("Cluster 2 Items", style = "margin-top: 20px;"),
+        tableOutput("cluster2Table")  # Table for Cluster 2, displayed below Cluster 1
+      ),
       actionButton("backToClusteringPanel", "Back")
     )
   )
@@ -149,21 +178,20 @@ server <- function(input, output, session) {
   questions <- reactiveVal()
   answers <- reactiveVal()
   clusters <- reactiveVal()
+  relevantItems <- reactiveVal()
+  selectedQuestion <- reactiveVal()
   
   # Observe file inputs and read CSVs
   observeEvent(input$fileInput, {
     req(input$fileInput)
     file <- input$fileInput$datapath
     data(read.csv(file, stringsAsFactors = FALSE))
-    output$table <- renderTable({
-      data()
-    })
   })
   
   observeEvent(input$questionsFile, {
     req(input$questionsFile)
     file <- input$questionsFile$datapath
-    questions(read.csv(file, stringsAsFactors = FALSE, row.names = 1))
+    questions(read.csv(file, stringsAsFactors = FALSE, sep = ";")[4][[1]])
   })
   
   observeEvent(input$answersFile, {
@@ -194,30 +222,84 @@ server <- function(input, output, session) {
   })
   
   # Compare two clusters
+  # observeEvent(input$compareClusters, {
+  #   req(input$cluster1, input$cluster2, questions(), answers())
+  # 
+  #   relevant_items <- get_most_relevant_items(answers(), clusters(), as.numeric(input$cluster1), as.numeric(input$cluster2))
+  #   
+  #   
+  #   output$comparisonDetails <- renderPrint({
+  #     relevant_items
+  #     
+  #   })
+  #   
+  #   shinyjs::hide("clusteringPanel")
+  #   shinyjs::show("comparisonPanel")
+  # })
+  
   observeEvent(input$compareClusters, {
     req(input$cluster1, input$cluster2, questions(), answers())
-    
-    cluster1 <- list(as.numeric(input$cluster1), which(clusters()$clustering == as.numeric(input$cluster1)))
-    cluster2 <- list(as.numeric(input$cluster2), which(clusters()$clustering == as.numeric(input$cluster2)))
-    
-    differentiationResults <- sapply(rownames(questions()), function(question) {
-      kalkulatu_diferentziazioa(questions(), clusters()$membership, question, cluster1, cluster2)
-    })
-    
-    differentiationResults[is.na(differentiationResults)] <- -Inf
-    topQuestions <- names(sort(differentiationResults, decreasing = TRUE)[1:3])
-    
-    output$comparisonDetails <- renderPrint({
-      lapply(topQuestions, function(question) {
-        list(
-          Question = question,
-          Answers = answers()[question, cluster1[[2]], drop = FALSE]
-        )
-      })
-    })
-    
     shinyjs::hide("clusteringPanel")
     shinyjs::show("comparisonPanel")
+    
+    relevantItems(get_most_relevant_items(answers(), questions(), data(), clusters(), as.numeric(input$cluster1), as.numeric(input$cluster2), 10))
+
+    output$topQuestionsTable <- DT::renderDataTable({
+      data.frame(Questions = relevantItems()$top_questions)
+    }, selection = "single", options = list(pageLength = 5, dom = 't'))
+    
+  })
+  
+ observeEvent(input$topQuestionsTable_rows_selected, {
+    req(input$topQuestionsTable_rows_selected)  # Ensure a question is selected
+    
+    # Store the selected question index
+    selectedQuestion(input$topQuestionsTable_rows_selected)
+    
+    # Retrieve relevant items
+    selected_index <- selectedQuestion()
+    
+    # Render Cluster 1 Table
+    output$cluster1Table <- renderTable({
+      req(relevantItems()$cluster1_items)
+      cluster1_data <- relevantItems()$cluster1_items
+      cluster1_data[selected_index, , drop = FALSE]
+    })
+    
+    # Render Cluster 2 Table
+    output$cluster2Table <- renderTable({
+      req(relevantItems()$cluster2_items)
+      cluster2_data <- relevantItems()$cluster2_items
+      cluster2_data[selected_index, , drop = FALSE]
+    })
+    
+    
+  })
+  
+  observeEvent(input$backToMainPanel, {
+    shinyjs::hide("clusteringPanel")
+    shinyjs::show("mainPanel")
+  })
+  
+  observeEvent(input$backToClusteringPanel, {
+    shinyjs::hide("comparisonPanel")
+    shinyjs::show("clusteringPanel")
+    
+    
+    relevantItems(NULL)
+    
+    output$topQuestionsTable <- DT::renderDataTable({
+      data.frame(Index = integer(), Questions = character())
+    }, selection = "single", options = list(pageLength = 5, dom = 't'))
+    
+    output$cluster1Table <- renderTable({
+      NULL
+    })
+    
+    output$cluster2Table <- renderTable({
+      NULL
+    })
+    
   })
 }
 
