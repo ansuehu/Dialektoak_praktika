@@ -1,7 +1,7 @@
 library(shiny)
 library(shinyjs)
 library(cluster)
-library(shinycssloaders)
+#library(shinycssloaders)
 
 bilbao_d <- function(items1, items2) {
   bat <- sum(items1 %in% items2) + sum(items2 %in% items1)
@@ -9,7 +9,21 @@ bilbao_d <- function(items1, items2) {
   return(result)
 }
 
-kalkulatu_estabilitatea <- function(datubasea, membership, galdera, cluster) {
+levenshtein_d <- function(items1, items2) {
+  # Compute the sum of Levenshtein distances for all string pairs
+  distances <- outer(items1, items2, Vectorize(function(a, b) stringdist(a, b, method = "lv")))
+  
+  # Normalize the total distance
+  max_length <- max(c(nchar(unlist(items1)), nchar(unlist(items2))), na.rm = TRUE)
+  if (max_length == 0) return(1)  # Avoid division by zero for empty inputs
+  
+  total_distance <- sum(distances, na.rm = TRUE)
+  normalized_distance <- total_distance / (length(items1) * length(items2) * max_length)
+  
+  return(normalized_distance)
+}
+
+kalkulatu_estabilitatea <- function(datubasea, membership, galdera, cluster, distantzia_funtzioa) {
   c <- cluster[[1]]
   elementuak <- cluster[[2]]
   n <- length(elementuak)
@@ -29,7 +43,7 @@ kalkulatu_estabilitatea <- function(datubasea, membership, galdera, cluster) {
           datubasea[galdera, p_i] == "" || datubasea[galdera, p_j] == "") {
         distantzia <- 1
       } else {
-        distantzia <- bilbao_d(strsplit(datubasea[galdera, p_i], ",")[[1]], strsplit(datubasea[galdera, p_j], ",")[[1]])
+        distantzia <- distantzia_funtzioa(strsplit(datubasea[galdera, p_i], ",")[[1]], strsplit(datubasea[galdera, p_j], ",")[[1]])
       }
       
       pisuak <- membership[p_i, c] * membership[p_j, c]
@@ -43,7 +57,7 @@ kalkulatu_estabilitatea <- function(datubasea, membership, galdera, cluster) {
 }
 
 
-kalkulatu_bariabilitatea <- function(datubasea, membership, galdera, cluster1, cluster2) {
+kalkulatu_bariabilitatea <- function(datubasea, membership, galdera, cluster1, cluster2, distantzia_funtzioa) {
   c1 <- cluster1[[1]]
   elementuak1 <- cluster1[[2]]
   
@@ -59,7 +73,7 @@ kalkulatu_bariabilitatea <- function(datubasea, membership, galdera, cluster1, c
           datubasea[galdera, i] == "" || datubasea[galdera, j] == "") {
         distantzia <- 1
       } else {
-        distantzia <- bilbao_d(strsplit(datubasea[galdera, i], ",")[[1]], 
+        distantzia <- distantzia_funtzioa(strsplit(datubasea[galdera, i], ",")[[1]], 
                                strsplit(datubasea[galdera, j], ",")[[1]])
       }
       
@@ -72,19 +86,20 @@ kalkulatu_bariabilitatea <- function(datubasea, membership, galdera, cluster1, c
   return(ifelse(pisuen_batura > 0, batura / pisuen_batura, NA))
 }
 
-kalkulatu_diferentziazioa <- function(datubasea, membership, galdera, cluster1, cluster2) {
-  estabilitatea1 <- kalkulatu_estabilitatea(datubasea, membership, galdera, cluster1)
-  estabilitatea2 <- kalkulatu_estabilitatea(datubasea, membership, galdera, cluster2)
+kalkulatu_diferentziazioa <- function(datubasea, membership, galdera, cluster1, cluster2, distantzia_funtzioa) {
+  estabilitatea1 <- kalkulatu_estabilitatea(datubasea, membership, galdera, cluster1, distantzia_funtzioa)
+  estabilitatea2 <- kalkulatu_estabilitatea(datubasea, membership, galdera, cluster2, distantzia_funtzioa)
   
   if (is.na(estabilitatea1) || is.na(estabilitatea2)) return(NA)
   
-  bariabilitatea1_2 <- kalkulatu_bariabilitatea(datubasea, membership, galdera, cluster1, cluster2)
+  bariabilitatea1_2 <- kalkulatu_bariabilitatea(datubasea, membership, galdera, cluster1, cluster2, distantzia_funtzioa)
   return(bariabilitatea1_2 / max(estabilitatea1, estabilitatea2, 1e-6))
 }
 
-get_most_relevant_items <- function(datubasea, questions, data, clusteringResult, c1, c2, n){
+get_most_relevant_items <- function(datubasea, questions, data, clusteringResult, c1, c2, n, distantzia_funtzioa){
   clusters <- clusteringResult$clustering
   membership <- clusteringResult$membership
+  
   indices1 <- which(clusters == c1)
   indices2 <- which(clusters == c2)
   
@@ -94,22 +109,27 @@ get_most_relevant_items <- function(datubasea, questions, data, clusteringResult
   diferentziazioak <- numeric(length(datubasea))
   
   for (galdera in 1:dim(datubasea)[1]) {
-    diferentziazioak[galdera] <- kalkulatu_diferentziazioa(datubasea, membership, galdera, cluster1, cluster2)
+    diferentziazioak[galdera] <- kalkulatu_diferentziazioa(datubasea, membership, galdera, cluster1, cluster2, distantzia_funtzioa)
   }
+  
+  
+  
   sorted_indices <- order(diferentziazioak, decreasing = TRUE)
+  
+  
   
   top3_items <- sorted_indices[1:n]
   
   top_questions <- questions[top3_items]
-  
+
   cluster1_items <- datubasea[top3_items, indices1]
   cluster2_items <- datubasea[top3_items, indices2]
   
   xnames <- c(colnames(cluster1_items))
   ind <- as.integer(sub('.', '', xnames))
-  ind <- ind + 2 
+  ind <- ind + 2
   colnames(cluster1_items) <- names(data)[ind]
-
+  
   
   xnames <- c(colnames(cluster2_items))
   ind <- as.integer(sub('.', '', xnames))
@@ -121,7 +141,7 @@ get_most_relevant_items <- function(datubasea, questions, data, clusteringResult
   return(output)
 }
 
-# Define UI for the app
+
 ui <- fluidPage(
   useShinyjs(),
   titlePanel("Diatech Fuzzy Clustering Demo"),
@@ -130,8 +150,11 @@ ui <- fluidPage(
     sidebarLayout(
       sidebarPanel(
         fileInput("fileInput", "Import Distance Matrix", accept = ".csv"),
+        textOutput("fileInputError"),  # Error message placeholder
         fileInput("questionsFile", "Import Questions", accept = ".csv"),
+        textOutput("questionsFileError"),  # Error message placeholder
         fileInput("answersFile", "Import Answers", accept = ".csv"),
+        textOutput("answersFileError"),  # Error message placeholder
         numericInput("number_of_clusters", "Number of Clusters:", value = 20, min = 2, step = 1),
         numericInput("exponential", "Exponential Parameter:", value = 1.2, min = 1, step = 0.1),
         actionButton("performClustering", "Perform Clustering")
@@ -145,8 +168,10 @@ ui <- fluidPage(
   hidden(
     div(
       id = "clusteringPanel",
-      selectInput("cluster1", "Select Cluster 1:", choices = 1, multiple = FALSE),
-      selectInput("cluster2", "Select Cluster 2:", choices = 2, multiple = FALSE),
+      selectInput("cluster1", "Select Cluster 1:", choices = 1),
+      selectInput("cluster2", "Select Cluster 2:", choices = 1),
+      selectInput("distanceFunction", "Select Distance:", choices = c("Bilbao Distance" = "bilbao_d", "Levenshtein Distance" = "levenshtein_d")),
+      numericInput("n_items", "Number of Relevant items:", value = 5, min = 1, step = 1), 
       actionButton("compareClusters", "Compare Clusters"),
       actionButton("backToMainPanel", "Back")
     )
@@ -160,17 +185,15 @@ ui <- fluidPage(
       div(
         style = "padding: 10px;",
         h4("Cluster 1 Items"),
-        tableOutput("cluster1Table"),  # Table for Cluster 1
-        
+        tableOutput("cluster1Table"),
         h4("Cluster 2 Items", style = "margin-top: 20px;"),
-        tableOutput("cluster2Table")  # Table for Cluster 2, displayed below Cluster 1
+        tableOutput("cluster2Table")
       ),
       actionButton("backToClusteringPanel", "Back")
     )
   )
 )
 
-# Define server logic
 server <- function(input, output, session) {
   
   # Reactive values to store the data
@@ -179,127 +202,153 @@ server <- function(input, output, session) {
   answers <- reactiveVal()
   clusters <- reactiveVal()
   relevantItems <- reactiveVal()
-  selectedQuestion <- reactiveVal()
   
-  # Observe file inputs and read CSVs
+  # File import with error handling
   observeEvent(input$fileInput, {
-    req(input$fileInput)
-    file <- input$fileInput$datapath
-    data(read.csv(file, stringsAsFactors = FALSE))
+    tryCatch({
+      req(input$fileInput)
+      file <- input$fileInput$datapath
+      data(read.csv(file, stringsAsFactors = FALSE))
+      output$fileInputError <- renderText({ "" })  # Clear error message
+      showNotification("Distance matrix imported successfully!", type = "message")
+    }, error = function(e) {
+      output$fileInputError <- renderText({ paste("Error importing Distance Matrix:", e$message) })
+      showNotification("Failed to import Distance Matrix!", type = "error")
+    })
   })
   
   observeEvent(input$questionsFile, {
-    req(input$questionsFile)
-    file <- input$questionsFile$datapath
-    questions(read.csv(file, stringsAsFactors = FALSE, sep = ";")[4][[1]])
+    tryCatch({
+      req(input$questionsFile)
+      file <- input$questionsFile$datapath
+      questions(read.csv(file, stringsAsFactors = FALSE, sep = ";")[4][[1]])
+      output$questionsFileError <- renderText({ "" })  # Clear error message
+      showNotification("Questions imported successfully!", type = "message")
+    }, error = function(e) {
+      output$questionsFileError <- renderText({ paste("Error importing Questions:", e$message) })
+      showNotification("Failed to import Questions!", type = "error")
+    })
   })
   
   observeEvent(input$answersFile, {
-    req(input$answersFile)
-    file <- input$answersFile$datapath
-    answers(as.matrix(read.csv(file, stringsAsFactors = FALSE, row.names=1)))
+    tryCatch({
+      req(input$answersFile)
+      file <- input$answersFile$datapath
+      answers(as.matrix(read.csv(file, stringsAsFactors = FALSE, row.names = 1)))
+      output$answersFileError <- renderText({ "" })  # Clear error message
+      showNotification("Answers imported successfully!", type = "message")
+    }, error = function(e) {
+      output$answersFileError <- renderText({ paste("Error importing Answers:", e$message) })
+      showNotification("Failed to import Answers!", type = "error")
+    })
   })
   
   # Perform clustering using FANNY
   observeEvent(input$performClustering, {
-    req(data())
-    
-    # Ensure numeric data for clustering
-    numericData <- data()
-    numericData <- numericData[sapply(numericData, is.numeric)] # Filter numeric columns
-    numericData[is.na(numericData)] <- 0 # Replace NA with 0
-    
-    distMatrix <- dist(numericData) # Compute distance matrix
-    clusteringResult <- fanny(distMatrix, k = input$number_of_clusters, memb.exp = input$exponential)
-    clusters(clusteringResult)
-    
-    clusterLabels <- unique(clusteringResult$clustering)
-    updateSelectInput(session, "cluster1", choices = clusterLabels)
-    updateSelectInput(session, "cluster2", choices = clusterLabels)
-    
-    shinyjs::hide("mainPanel")
-    shinyjs::show("clusteringPanel")
+    tryCatch({
+      req(data())
+      numericData <- data()
+      numericData <- numericData[sapply(numericData, is.numeric)]
+      numericData[is.na(numericData)] <- 0
+      distMatrix <- dist(numericData)
+      clusteringResult <- fanny(distMatrix, k = input$number_of_clusters, memb.exp = input$exponential)
+      
+      #write.csv(clusteringResult$, "./uneko_membership.csv", row.names = FALSE)
+      #write.csv(clusteringResult$clustering, "./uneko_clusters_3.csv", row.names = FALSE)
+      
+      clusters(clusteringResult)
+      
+      distances <- c("Bilbao Distance" = "bilbao_d", "Levenshtein Distance" = "levenshtein_d")
+      clusterLabels <- unique(clusteringResult$clustering)
+      updateSelectInput(session, "cluster1", choices = clusterLabels)
+      updateSelectInput(session, "cluster2", choices = clusterLabels)
+      
+      
+      shinyjs::hide("mainPanel")
+      shinyjs::show("clusteringPanel")
+    }, error = function(e) {
+    showNotification("Error performing clustering: Please check your input data.", type = "error")
+    })
   })
-  
-  # Compare two clusters
-  # observeEvent(input$compareClusters, {
-  #   req(input$cluster1, input$cluster2, questions(), answers())
-  # 
-  #   relevant_items <- get_most_relevant_items(answers(), clusters(), as.numeric(input$cluster1), as.numeric(input$cluster2))
-  #   
-  #   
-  #   output$comparisonDetails <- renderPrint({
-  #     relevant_items
-  #     
-  #   })
-  #   
-  #   shinyjs::hide("clusteringPanel")
-  #   shinyjs::show("comparisonPanel")
-  # })
-  
-  observeEvent(input$compareClusters, {
-    req(input$cluster1, input$cluster2, questions(), answers())
-    shinyjs::hide("clusteringPanel")
-    shinyjs::show("comparisonPanel")
-    
-    relevantItems(get_most_relevant_items(answers(), questions(), data(), clusters(), as.numeric(input$cluster1), as.numeric(input$cluster2), 10))
 
-    output$topQuestionsTable <- DT::renderDataTable({
-      data.frame(Questions = relevantItems()$top_questions)
-    }, selection = "single", options = list(pageLength = 5, dom = 't'))
-    
-  })
   
- observeEvent(input$topQuestionsTable_rows_selected, {
-    req(input$topQuestionsTable_rows_selected)  # Ensure a question is selected
+  # Compare clusters
+  observeEvent(input$compareClusters, {
     
-    # Store the selected question index
-    selectedQuestion(input$topQuestionsTable_rows_selected)
     
-    # Retrieve relevant items
-    selected_index <- selectedQuestion()
+    tryCatch({
+      req(input$cluster1, input$cluster2, input$distanceFunction, questions(), answers())
+      
+      shinyjs::hide("clusteringPanel")
+      shinyjs::show("comparisonPanel")
+      
+      selected_distance_function <- reactive({
+        switch(input$distanceFunction,
+               bilbao_d = bilbao_d,
+               levenshtein_d = levenshtein_d)
+      })
+      
+      relevantItems(get_most_relevant_items(
+        datubasea = answers(),
+        questions = questions(),
+        data = data(),
+        clusteringResult = clusters(),
+        c1 = as.numeric(input$cluster1),
+        c2 = as.numeric(input$cluster2),
+        n = input$n_items,
+        distantzia_funtzioa = selected_distance_function()
+      ))
+      
+      
+      output$topQuestionsTable <- DT::renderDataTable({
+        req(relevantItems())
+        data.frame(Questions = relevantItems()$top_questions)
+      }, selection = "single", options = list(pageLength = input$n_items, dom = 't'))
     
-    # Render Cluster 1 Table
-    output$cluster1Table <- renderTable({
-      req(relevantItems()$cluster1_items)
-      cluster1_data <- relevantItems()$cluster1_items
-      cluster1_data[selected_index, , drop = FALSE]
+    
+    }, error = function(e) {
+      showNotification("Error comparing clusters: Check data or clustering result.", type = "error")
     })
-    
-    # Render Cluster 2 Table
-    output$cluster2Table <- renderTable({
-      req(relevantItems()$cluster2_items)
-      cluster2_data <- relevantItems()$cluster2_items
-      cluster2_data[selected_index, , drop = FALSE]
+  })
+  
+  
+  observeEvent(input$topQuestionsTable_rows_selected, {
+    tryCatch({
+      req(input$topQuestionsTable_rows_selected, relevantItems())
+      
+      selectedIndex <- input$topQuestionsTable_rows_selected
+      
+      # Render Cluster 1 Items
+      output$cluster1Table <- renderTable({
+        relevantItems()$cluster1_items[selectedIndex, , drop = FALSE]
+      })
+      
+      # Render Cluster 2 Items
+      output$cluster2Table <- renderTable({
+        relevantItems()$cluster2_items[selectedIndex, , drop = FALSE]
+      })
+      
+    }, error = function(e) {
+    showNotification("Error displaying cluster items.", type = "error")
     })
-    
-    
   })
   
-  observeEvent(input$backToMainPanel, {
-    shinyjs::hide("clusteringPanel")
-    shinyjs::show("mainPanel")
-  })
-  
+  # Navigate back to the clustering panel
   observeEvent(input$backToClusteringPanel, {
     shinyjs::hide("comparisonPanel")
     shinyjs::show("clusteringPanel")
     
-    
-    relevantItems(NULL)
-    
-    output$topQuestionsTable <- DT::renderDataTable({
-      data.frame(Index = integer(), Questions = character())
-    }, selection = "single", options = list(pageLength = 5, dom = 't'))
-    
-    output$cluster1Table <- renderTable({
-      NULL
-    })
-    
-    output$cluster2Table <- renderTable({
-      NULL
-    })
-    
+    # Clear tables when navigating back
+    relevantItems <- reactiveVal()
+    output$topQuestionsTable <- DT::renderDataTable({ NULL })
+    output$cluster1Table <- renderTable({ NULL })
+    output$cluster2Table <- renderTable({ NULL })
+  })
+  
+  # Navigate back to the main panel
+  observeEvent(input$backToMainPanel, {
+    shinyjs::hide("clusteringPanel")
+    shinyjs::show("mainPanel")
   })
 }
 

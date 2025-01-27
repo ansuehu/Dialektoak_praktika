@@ -3,15 +3,16 @@ library(cluster)
 #install.packages('hash')
 library(hash)
 
-dist_matrizea <- read.csv("./Datu-basea_ euskalkien ezaugarri adierazgarriak eta bereizgarriak/Matriz-distancias del ESB-Diatech z-24-04-02.csv", row.names=1)
-datubasea <- read.csv("./Datu-basea_ euskalkien ezaugarri adierazgarriak eta bereizgarriak/ESB-datu-basea-taula.csv", row.names=1)
+dist_matrizea <- read.csv("/Volumes/MacOS 1TB/Repos/Dialektoak_praktika-1/Datu-basea_ euskalkien ezaugarri adierazgarriak eta bereizgarriak/Matriz-distancias del ESB-Diatech z-24-04-02.csv", row.names=1)
+datubasea <- read.csv("/Volumes/MacOS 1TB/Repos/Dialektoak_praktika-1/Datu-basea_ euskalkien ezaugarri adierazgarriak eta bereizgarriak/ESB-datu-basea-taula.csv", row.names=1)
 
 # datubasea
 dist_matrizea <- data.matrix(dist_matrizea)
 d <- as.dist(dist_matrizea)
+d
 #mds.coor <- cmdscale(d)
 fanny_emaitza <- fanny(d, 10,  diss = TRUE, memb.exp = 1.5)
-fanny_emaitza
+names(fanny_emaitza$clustering)
 #write.csv(fanny_emaitza$membership, "./Datu-basea_ euskalkien ezaugarri adierazgarriak eta bereizgarriak/fanny_membership_3.csv", row.names = FALSE)
 
 # # Exportar los clusters asignados
@@ -147,3 +148,28 @@ cluster2_items[[1]][2]
 names(which(clusters == c1))
 
 cbind(cluster1_items, cluster2_items)[1]
+
+
+library(stringdist)
+levenshtein_d <- function(items1, items2) {
+  # Compute the sum of Levenshtein distances for all string pairs
+  distances <- outer(items1, items2, Vectorize(function(a, b) stringdist(a, b, method = "lv")))
+  
+  # Normalize the total distance
+  max_length <- max(c(nchar(unlist(items1)), nchar(unlist(items2))), na.rm = TRUE)
+  if (max_length == 0) return(1)  # Avoid division by zero for empty inputs
+  
+  total_distance <- sum(distances, na.rm = TRUE)
+  normalized_distance <- total_distance / (length(items1) * length(items2) * max_length)
+  
+  return(normalized_distance)
+}
+
+
+
+items1 <- c("a", "a", "b")
+items2 <- c("a", "a", "a")
+
+# Calculate normalized Levenshtein distance
+distance <- levenshtein_d(items1, items2)
+print(distance)
