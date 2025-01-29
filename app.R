@@ -1,7 +1,9 @@
 library(shiny)
+library(shinyWidgets)
 library(shinyjs)
 library(cluster)
-#library(shinycssloaders)
+library(shinycssloaders)
+library(stringdist)
 
 bilbao_d <- function(items1, items2) {
   bat <- sum(items1 %in% items2) + sum(items2 %in% items1)
@@ -10,12 +12,10 @@ bilbao_d <- function(items1, items2) {
 }
 
 levenshtein_d <- function(items1, items2) {
-  # Compute the sum of Levenshtein distances for all string pairs
   distances <- outer(items1, items2, Vectorize(function(a, b) stringdist(a, b, method = "lv")))
   
-  # Normalize the total distance
   max_length <- max(c(nchar(unlist(items1)), nchar(unlist(items2))), na.rm = TRUE)
-  if (max_length == 0) return(1)  # Avoid division by zero for empty inputs
+  if (max_length == 0) return(1)  
   
   total_distance <- sum(distances, na.rm = TRUE)
   normalized_distance <- total_distance / (length(items1) * length(items2) * max_length)
@@ -23,7 +23,7 @@ levenshtein_d <- function(items1, items2) {
   return(normalized_distance)
 }
 
-kalkulatu_estabilitatea <- function(datubasea, membership, galdera, cluster, distantzia_funtzioa) {
+kalkulatu_estabilitatea <- function(answers, membership, galdera, cluster, distantzia_funtzioa) {
   c <- cluster[[1]]
   elementuak <- cluster[[2]]
   n <- length(elementuak)
@@ -39,11 +39,11 @@ kalkulatu_estabilitatea <- function(datubasea, membership, galdera, cluster, dis
       p_i <- elementuak[i]
       p_j <- elementuak[j]
       
-      if (is.na(datubasea[galdera, p_i]) || is.na(datubasea[galdera, p_j]) || 
-          datubasea[galdera, p_i] == "" || datubasea[galdera, p_j] == "") {
+      if (is.na(answers[galdera, p_i]) || is.na(answers[galdera, p_j]) || 
+          answers[galdera, p_i] == "" || answers[galdera, p_j] == "") {
         distantzia <- 1
       } else {
-        distantzia <- distantzia_funtzioa(strsplit(datubasea[galdera, p_i], ",")[[1]], strsplit(datubasea[galdera, p_j], ",")[[1]])
+        distantzia <- distantzia_funtzioa(strsplit(answers[galdera, p_i], ",")[[1]], strsplit(answers[galdera, p_j], ",")[[1]])
       }
       
       pisuak <- membership[p_i, c] * membership[p_j, c]
@@ -57,7 +57,7 @@ kalkulatu_estabilitatea <- function(datubasea, membership, galdera, cluster, dis
 }
 
 
-kalkulatu_bariabilitatea <- function(datubasea, membership, galdera, cluster1, cluster2, distantzia_funtzioa) {
+kalkulatu_bariabilitatea <- function(answers, membership, galdera, cluster1, cluster2, distantzia_funtzioa) {
   c1 <- cluster1[[1]]
   elementuak1 <- cluster1[[2]]
   
@@ -69,12 +69,12 @@ kalkulatu_bariabilitatea <- function(datubasea, membership, galdera, cluster1, c
   
   for (i in elementuak1) {
     for (j in elementuak2) {
-      if (is.na(datubasea[galdera, i]) || is.na(datubasea[galdera, j]) || 
-          datubasea[galdera, i] == "" || datubasea[galdera, j] == "") {
+      if (is.na(answers[galdera, i]) || is.na(answers[galdera, j]) || 
+          answers[galdera, i] == "" || answers[galdera, j] == "") {
         distantzia <- 1
       } else {
-        distantzia <- distantzia_funtzioa(strsplit(datubasea[galdera, i], ",")[[1]], 
-                               strsplit(datubasea[galdera, j], ",")[[1]])
+        distantzia <- distantzia_funtzioa(strsplit(answers[galdera, i], ",")[[1]], 
+                               strsplit(answers[galdera, j], ",")[[1]])
       }
       
       pisuak <- membership[i, c1] * membership[j, c2]
@@ -86,19 +86,23 @@ kalkulatu_bariabilitatea <- function(datubasea, membership, galdera, cluster1, c
   return(ifelse(pisuen_batura > 0, batura / pisuen_batura, NA))
 }
 
-kalkulatu_diferentziazioa <- function(datubasea, membership, galdera, cluster1, cluster2, distantzia_funtzioa) {
-  estabilitatea1 <- kalkulatu_estabilitatea(datubasea, membership, galdera, cluster1, distantzia_funtzioa)
-  estabilitatea2 <- kalkulatu_estabilitatea(datubasea, membership, galdera, cluster2, distantzia_funtzioa)
+kalkulatu_diferentziazioa <- function(answers, membership, galdera, cluster1, cluster2, distantzia_funtzioa) {
+  estabilitatea1 <- kalkulatu_estabilitatea(answers, membership, galdera, cluster1, distantzia_funtzioa)
+  estabilitatea2 <- kalkulatu_estabilitatea(answers, membership, galdera, cluster2, distantzia_funtzioa)
   
   if (is.na(estabilitatea1) || is.na(estabilitatea2)) return(NA)
   
-  bariabilitatea1_2 <- kalkulatu_bariabilitatea(datubasea, membership, galdera, cluster1, cluster2, distantzia_funtzioa)
-  return(bariabilitatea1_2 / max(estabilitatea1, estabilitatea2, 1e-6))
+
+  bariabilitatea1_2 <- kalkulatu_bariabilitatea(answers, membership, galdera, cluster1, cluster2, distantzia_funtzioa)
+
+  diferentziazioa = bariabilitatea1_2 / max(estabilitatea1, estabilitatea2, 0.1)
+  return (data.frame(galdera = galdera, diferentziazioa = diferentziazioa, estabilitatea_1 = estabilitatea1, estabilitatea_2= estabilitatea2, bariabilitatea1_2= bariabilitatea1_2))
 }
 
-get_most_relevant_items <- function(datubasea, questions, data, clusteringResult, c1, c2, n, distantzia_funtzioa){
+get_most_relevant_items <- function(answers, questions, clusteringResult, c1, c2, n, distantzia_funtzioa, set_progress){
   clusters <- clusteringResult$clustering
   membership <- clusteringResult$membership
+  names <- rownames(clusteringResult$membership)
   
   indices1 <- which(clusters == c1)
   indices2 <- which(clusters == c2)
@@ -106,37 +110,31 @@ get_most_relevant_items <- function(datubasea, questions, data, clusteringResult
   cluster1 <- list(c1, indices1)
   cluster2 <- list(c2, indices2)
   
-  diferentziazioak <- numeric(length(datubasea))
+  diferentziazioak <- data.frame()
   
-  for (galdera in 1:dim(datubasea)[1]) {
-    diferentziazioak[galdera] <- kalkulatu_diferentziazioa(datubasea, membership, galdera, cluster1, cluster2, distantzia_funtzioa)
+  k <- dim(answers)[1]
+  
+  for (galdera in 1:k) {
+  
+    uneko_dif <- kalkulatu_diferentziazioa(answers, membership, galdera, cluster1, cluster2, distantzia_funtzioa)
+    diferentziazioak <- rbind(diferentziazioak, uneko_dif)
+    set_progress(galdera/k)
   }
-  
-  
-  
-  sorted_indices <- order(diferentziazioak, decreasing = TRUE)
-  
-  
-  
-  top3_items <- sorted_indices[1:n]
-  
-  top_questions <- questions[top3_items]
 
-  cluster1_items <- datubasea[top3_items, indices1]
-  cluster2_items <- datubasea[top3_items, indices2]
+  diferentziazioak <- diferentziazioak[order(-diferentziazioak$diferentziazioa), ]
+
+  topn_items <- head(diferentziazioak, n)
   
-  xnames <- c(colnames(cluster1_items))
-  ind <- as.integer(sub('.', '', xnames))
-  ind <- ind + 2
-  colnames(cluster1_items) <- names(data)[ind]
+  cluster1_items <- answers[topn_items$galdera, indices1]
+  cluster2_items <- answers[topn_items$galdera, indices2]
   
+  top_questions <- questions[topn_items$galdera]
+  topn_items$galdera <- top_questions
   
-  xnames <- c(colnames(cluster2_items))
-  ind <- as.integer(sub('.', '', xnames))
-  ind <- ind + 2 
-  colnames(cluster2_items) <- names(data)[ind]
+  colnames(cluster1_items) <- names(indices1)
+  colnames(cluster2_items) <- names(indices2)
   
-  output <- list("top_questions" = top_questions, "cluster1_items" = cluster1_items, "cluster2_items" = cluster2_items)
+  output <- list("top_questions" = topn_items, "cluster1_items" = cluster1_items, "cluster2_items" = cluster2_items)
   
   return(output)
 }
@@ -155,6 +153,8 @@ ui <- fluidPage(
         textOutput("questionsFileError"),  # Error message placeholder
         fileInput("answersFile", "Import Answers", accept = ".csv"),
         textOutput("answersFileError"),  # Error message placeholder
+        fileInput("locationFile", "Import Location", accept = ".csv"),
+        textOutput("locationFileError"),  # Error message placeholder
         numericInput("number_of_clusters", "Number of Clusters:", value = 20, min = 2, step = 1),
         numericInput("exponential", "Exponential Parameter:", value = 1.2, min = 1, step = 0.1),
         actionButton("performClustering", "Perform Clustering")
@@ -180,7 +180,7 @@ ui <- fluidPage(
     div(
       id = "comparisonPanel",
       h3("Relevant Questions", style = "padding: 10px;"),
-      withSpinner(DT::dataTableOutput("topQuestionsTable")),
+      DT::dataTableOutput("topQuestionsTable"),
       h3("Cluster Items for Selected Question", style = "padding: 10px;"),
       div(
         style = "padding: 10px;",
@@ -189,27 +189,28 @@ ui <- fluidPage(
         h4("Cluster 2 Items", style = "margin-top: 20px;"),
         tableOutput("cluster2Table")
       ),
-      actionButton("backToClusteringPanel", "Back")
+      actionButton("backToClusteringPanel", "Back"),
+      verbatimTextOutput("progress_output")
     )
   )
 )
 
 server <- function(input, output, session) {
   
-  # Reactive values to store the data
-  data <- reactiveVal()
+  dist_matrix <- reactiveVal()
   questions <- reactiveVal()
   answers <- reactiveVal()
+  location <- reactiveVal()
   clusters <- reactiveVal()
   relevantItems <- reactiveVal()
   
-  # File import with error handling
   observeEvent(input$fileInput, {
     tryCatch({
       req(input$fileInput)
       file <- input$fileInput$datapath
-      data(read.csv(file, stringsAsFactors = FALSE))
+      dist_matrix(read.csv(file, row.names = 1))
       output$fileInputError <- renderText({ "" })  # Clear error message
+      cleaned <<- FALSE
       showNotification("Distance matrix imported successfully!", type = "message")
     }, error = function(e) {
       output$fileInputError <- renderText({ paste("Error importing Distance Matrix:", e$message) })
@@ -234,7 +235,7 @@ server <- function(input, output, session) {
     tryCatch({
       req(input$answersFile)
       file <- input$answersFile$datapath
-      answers(as.matrix(read.csv(file, stringsAsFactors = FALSE, row.names = 1)))
+      answers(read.csv(file, stringsAsFactors = FALSE, row.names = 1))
       output$answersFileError <- renderText({ "" })  # Clear error message
       showNotification("Answers imported successfully!", type = "message")
     }, error = function(e) {
@@ -243,18 +244,46 @@ server <- function(input, output, session) {
     })
   })
   
+  observeEvent(input$locationFile, {
+    tryCatch({
+      req(input$locationFile)
+      file <- input$locationFile$datapath
+      location(read.csv(file, sep= ';', header = FALSE, col.names = c("ID", "Town", 'X1', 'X2')))
+      
+      output$locationFileError <- renderText({ "" })  # Clear error message
+      showNotification("Locations imported successfully!", type = "message")
+    }, error = function(e) {
+      output$locationFileError <- renderText({ paste("Error importing Locations:", e$message) })
+      showNotification("Failed to import Locations!", type = "error")
+    })
+  })
+  
   # Perform clustering using FANNY
   observeEvent(input$performClustering, {
     tryCatch({
-      req(data())
-      numericData <- data()
-      numericData <- numericData[sapply(numericData, is.numeric)]
-      numericData[is.na(numericData)] <- 0
-      distMatrix <- dist(numericData)
-      clusteringResult <- fanny(distMatrix, k = input$number_of_clusters, memb.exp = input$exponential)
+      req(dist_matrix(), location())
+      distmatrix <- dist_matrix()
+      locations <- location()
       
-      #write.csv(clusteringResult$, "./uneko_membership.csv", row.names = FALSE)
-      #write.csv(clusteringResult$clustering, "./uneko_clusters_3.csv", row.names = FALSE)
+      if (!cleaned){
+        
+        clean_names <- function(name) {
+          sub("-(\\d+)$", "", name)
+        }
+        
+        rownames(distmatrix) <- sapply(rownames(distmatrix), clean_names)
+        colnames(distmatrix) <- sapply(rownames(distmatrix), clean_names)
+        
+        correct_order <- as.data.frame(locations)$Town 
+       
+        # Reorder the rows and columns of the distance matrix
+        distmatrix <- distmatrix[correct_order, correct_order]
+        
+        dist_matrix(distmatrix)
+        cleaned <<- TRUE
+      }
+      
+      clusteringResult <- fanny(distmatrix, k = input$number_of_clusters, memb.exp = input$exponential)
       
       clusters(clusteringResult)
       
@@ -267,17 +296,15 @@ server <- function(input, output, session) {
       shinyjs::hide("mainPanel")
       shinyjs::show("clusteringPanel")
     }, error = function(e) {
-    showNotification("Error performing clustering: Please check your input data.", type = "error")
+    showNotification(paste("Error performing clustering: Please check your input data.Error importing Locations:", e$message), type = "error")
     })
   })
 
-  
   # Compare clusters
   observeEvent(input$compareClusters, {
     
-    
     tryCatch({
-      req(input$cluster1, input$cluster2, input$distanceFunction, questions(), answers())
+      req(input$cluster1, input$cluster2, input$distanceFunction)
       
       shinyjs::hide("clusteringPanel")
       shinyjs::show("comparisonPanel")
@@ -288,26 +315,35 @@ server <- function(input, output, session) {
                levenshtein_d = levenshtein_d)
       })
       
-      relevantItems(get_most_relevant_items(
-        datubasea = answers(),
-        questions = questions(),
-        data = data(),
-        clusteringResult = clusters(),
-        c1 = as.numeric(input$cluster1),
-        c2 = as.numeric(input$cluster2),
-        n = input$n_items,
-        distantzia_funtzioa = selected_distance_function()
-      ))
-      
+      withProgress(message = 'Processing data...', value = 0, {
+        relevantItems(get_most_relevant_items(
+          answers = answers(),
+          questions = questions(),
+          clusteringResult = clusters(),
+          c1 = as.numeric(input$cluster1),
+          c2 = as.numeric(input$cluster2),
+          n = input$n_items,
+          distantzia_funtzioa = selected_distance_function(),
+          set_progress = function(value) { # Pass setProgress function
+            setProgress(value = value)
+          }
+        ))
+      })
       
       output$topQuestionsTable <- DT::renderDataTable({
         req(relevantItems())
-        data.frame(Questions = relevantItems()$top_questions)
+        
+        data.frame(Questions = relevantItems()$top_questions$galdera,
+                   Diferentiation = relevantItems()$top_questions$diferentziazioa,
+                   Stability1 = relevantItems()$top_questions$estabilitatea_1,
+                   Stability2 = relevantItems()$top_questions$estabilitatea_2,
+                   Variability = relevantItems()$top_questions$bariabilitatea1_2
+        )
       }, selection = "single", options = list(pageLength = input$n_items, dom = 't'))
     
     
     }, error = function(e) {
-      showNotification("Error comparing clusters: Check data or clustering result.", type = "error")
+      showNotification(paste("Error comparing clusters: Check data or clustering result.", e$message), type = "error")
     })
   })
   
@@ -315,7 +351,6 @@ server <- function(input, output, session) {
   observeEvent(input$topQuestionsTable_rows_selected, {
     tryCatch({
       req(input$topQuestionsTable_rows_selected, relevantItems())
-      
       selectedIndex <- input$topQuestionsTable_rows_selected
       
       # Render Cluster 1 Items
