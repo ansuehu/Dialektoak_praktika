@@ -95,7 +95,7 @@ kalkulatu_diferentziazioa <- function(answers, membership, galdera, cluster1, cl
   bariabilitatea1_2 <- kalkulatu_bariabilitatea(answers, membership, galdera, cluster1, cluster2, distantzia_funtzioa)
   
   diferentziazioa = bariabilitatea1_2 / max(estabilitatea1, estabilitatea2, 0.01)
-  return (data.frame(galdera = galdera, diferentziazioa = diferentziazioa, estabilitatea_1 = estabilitatea1, estabilitatea_2= estabilitatea2, bariabilitatea1_2= bariabilitatea1_2))
+  return (data.frame(galdera = galdera, diferentziazioa = round(diferentziazioa, 2), estabilitatea_1 = round(estabilitatea1, 2), estabilitatea_2= round(estabilitatea2, 2), bariabilitatea1_2= round(bariabilitatea1_2, 2)))
 }
 
 get_most_relevant_items_optimized <- function(answers, questions, clusteringResult, cluster1, cluster2, distantzia_funtzioa, set_progress) {
