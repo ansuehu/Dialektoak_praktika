@@ -6,6 +6,7 @@ library(shinycssloaders)
 library(stringdist)
 library(ggplot2)
 library(maps)
+library(parallel)
 
 
 
