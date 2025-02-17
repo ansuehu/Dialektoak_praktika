@@ -5,7 +5,9 @@ library(cluster)
 library(shinycssloaders)
 library(stringdist)
 library(ggplot2)
-library(parallel)
+library(maps)
+
+
 
 bilbao_d <- function(items1, items2) {
   bat <- sum(items1 %in% items2) + sum(items2 %in% items1)
@@ -13,9 +15,54 @@ bilbao_d <- function(items1, items2) {
   return(result)
 }
 
-levenshtein_d <- function(items1, items2) {
-  distances <- stringdistmatrix(items1, items2, method = "lv") 
+# levenshtein_d <- function(items1, items2) {
+#   distances <- stringdistmatrix(items1, items2, method = "lv") 
+#   
+#   max_length <- max(nchar(c(items1, items2)), na.rm = TRUE)
+#   if (max_length == 0) return(1)
+#   
+#   normalized_distance <- sum(distances, na.rm = TRUE) / (length(items1) * length(items2) * max_length)
+#   
+#   return(normalized_distance)
+# }
+
+levenshtein_distance <- function(str1, str2) {
+  len1 <- nchar(str1)
+  len2 <- nchar(str2)
   
+  # Create the distance matrix
+  dist_matrix <- matrix(0, nrow = len1 + 1, ncol = len2 + 1)
+  
+  # Initialize the first row and column
+  for (i in 1:(len1 + 1)) dist_matrix[i, 1] <- i - 1
+  for (j in 1:(len2 + 1)) dist_matrix[1, j] <- j - 1
+  
+  # Fill the matrix
+  for (i in 2:(len1 + 1)) {
+    for (j in 2:(len2 + 1)) {
+      cost <- ifelse(substr(str1, i - 1, i - 1) == substr(str2, j - 1, j - 1), 0, 1)
+      dist_matrix[i, j] <- min(
+        dist_matrix[i - 1, j] + 1,  # Deletion
+        dist_matrix[i, j - 1] + 1,  # Insertion
+        dist_matrix[i - 1, j - 1] + cost  # Substitution
+      )
+    }
+  }
+  
+  return(dist_matrix[len1 + 1, len2 + 1])
+}
+
+levenshtein_d <- function(items1, items2) {
+  distances <- matrix(0, nrow = length(items1), ncol = length(items2))
+  
+  # Calculate the pairwise Levenshtein distances
+  for (i in 1:length(items1)) {
+    for (j in 1:length(items2)) {
+      distances[i, j] <- levenshtein_distance(items1[i], items2[j])
+    }
+  }
+  
+  # Normalize the distance as in the original function
   max_length <- max(nchar(c(items1, items2)), na.rm = TRUE)
   if (max_length == 0) return(1)
   
@@ -145,67 +192,254 @@ ui <- fluidPage(
   titlePanel("Diatech Fuzzy Clustering Demo"),
   div(
     id = "mainPanel",
-    sidebarLayout(
-      sidebarPanel(
-        fileInput("fileInput", "Import Distance Matrix", accept = ".csv"),
-        textOutput("fileInputError"),
-        fileInput("questionsFile", "Import Questions", accept = ".csv"),
-        textOutput("questionsFileError"),
-        fileInput("answersFile", "Import Answers", accept = ".csv"),
-        textOutput("answersFileError"),
-        fileInput("locationFile", "Import Location", accept = ".csv"),
-        textOutput("locationFileError"), 
-        numericInput("number_of_clusters", "Number of Clusters:", value = 20, min = 2, step = 1),
-        numericInput("exponential", "Exponential Parameter:", value = 1.2, min = 1, step = 0.1),
-        actionButton("performClustering", "Perform Clustering")
+    style = "padding: 15px; background-color: #f9f9f9; border-radius: 8px;",
+    fluidRow(
+      column(
+        width = 5,
+        div(
+          style = "background-color: #ffffff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);",
+          h3("Input Data", style = "color: #495057; border-bottom: 1px solid #dee2e6; padding-bottom: 10px; margin-top: 0;"),
+          
+          div(
+            style = "margin-top: 15px;",
+            fileInput("fileInput", "Import Distance Matrix", accept = ".csv"),
+            textOutput("fileInputError")
+          ),
+          
+          div(
+            style = "margin-top: 15px;",
+            fileInput("questionsFile", "Import Questions", accept = ".csv"),
+            textOutput("questionsFileError")
+          ),
+          
+          div(
+            style = "margin-top: 15px;",
+            fileInput("answersFile", "Import Answers", accept = ".csv"),
+            textOutput("answersFileError")
+          ),
+          
+          div(
+            style = "margin-top: 15px;",
+            fileInput("locationFile", "Import Location", accept = ".csv"),
+            textOutput("locationFileError")
+          )
+        )
       ),
-      mainPanel(
-        tableOutput("table"),
-        verbatimTextOutput("result")
+    
+      column(
+        width = 3,
+        div(
+          style = "background-color: #ffffff; padding: 15px; margin-left: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);",
+          h3("Clustering Parameters", style = "color: #495057; border-bottom: 1px solid #dee2e6; padding-bottom: 8px;"),
+          
+          div(
+            style = "margin-top: 15px;",
+            numericInput("number_of_clusters", "Number of Clusters:", value = 20, min = 2, step = 1)
+          ),
+          
+          div(
+            style = "margin-top: 15px;",
+            numericInput("exponential", "Exponential Parameter:", value = 1.2, min = 1, step = 0.1)
+          ),
+          
+          div(
+            style = "margin-top: 25px;",
+            actionButton("performClustering", "Perform Clustering", 
+                         class = "btn-primary", style = "width: 100%;")
+          )
+        )
+      ),
+      # Add new column for app overview and stats visualization
+      column(
+        width = 4,
+        div(
+          style = "background-color: #ffffff; padding: 15px; margin-left: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);",
+          h3("Dashboard", style = "color: #495057; border-bottom: 1px solid #dee2e6; padding-bottom: 8px;"),
+          
+          div(
+            style = "margin-top: 15px;",
+            conditionalPanel(
+              condition = "input.locationFile",
+              h4("Location Map Preview", style = "color: #6c757d;"),
+              plotOutput("locationMapPreview", height = "200px")  # THIS SHOULD BE plotOutput, NOT leafletOutput
+            ),
+            
+            conditionalPanel(
+              condition = "!input.locationFile",
+              div(
+                style = "height: 200px; display: flex; align-items: center; justify-content: center; background-color: #f8f9fa; border-radius: 4px;",
+                div(
+                  style = "text-align: center;",
+                  icon("map-marker-alt", style = "font-size: 48px; color: #adb5bd;"),
+                  p("Upload location data to see map preview", style = "color: #6c757d; margin-top: 15px;")
+                )
+              )
+            )
+          ),
+          
+          div(
+            style = "margin-top: 25px;",
+            h4("Data Summary", style = "color: #6c757d;"),
+            uiOutput("dataSummary")
+          ),
+        )
       )
     )
   ),
+
   hidden(
     div(
       id = "clusteringPanel",
-      selectInput("cluster1", "Select Cluster 1:", 
-                  choices = c("All Clusters" = 0, 1), 
-                  label = NULL),
-      textOutput("cluster1Size"), 
-      selectInput("cluster2", "Select Cluster 2:", 
-                  choices = c("All Clusters" = 0, 1), 
-                  label = NULL),
-      textOutput("cluster2Size"), 
-      selectInput("distanceFunction", "Select Distance:", choices = c("Bilbao Distance" = "bilbao_d", "Levenshtein Distance" = "levenshtein_d")),
-      actionButton("compareClusters", "Compare Clusters"),
-      actionButton("backToMainPanel", "Back")
+      style = "padding: 15px; background-color: #f9f9f9; border-radius: 8px;",
+      fluidRow(
+        column(
+          width = 5,
+          div(
+            style = "background-color: #ffffff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);",
+            h3("Cluster Selection", style = "color: #495057; border-bottom: 1px solid #dee2e6; padding-bottom: 10px;"),
+            div(
+              style = "padding: 10px 0;",
+              selectInput("cluster1", "Select Cluster 1:", 
+                          choices = c("All Clusters" = 0, 1), 
+                          label = NULL),
+              textOutput("cluster1Size"), 
+              
+              selectInput("cluster2", "Select Cluster 2:", 
+                          choices = c("All Clusters" = 0, 1), 
+                          label = NULL),
+              textOutput("cluster2Size"),
+              
+              selectInput("distanceFunction", "Select Distance:", 
+                          choices = c("Bilbao Distance" = "bilbao_d", "Levenshtein Distance" = "levenshtein_d"),
+                          width = "100%"),
+              
+              div(
+                style = "margin-top: 20px;",
+                actionButton("compareClusters", "Compare Clusters", 
+                             class = "btn-primary", style = "width: 100%; margin-bottom: 10px;"),
+                downloadButton("downloadClustering", "Download Clustering Results", 
+                               style = "width: 100%; margin-bottom: 20px;"),
+                actionButton("backToMainPanel", "Back to Main Panel", 
+                             class = "btn-secondary", style = "width: 100%;")
+              )
+            )
+          )
+        ),
+        column(
+          width = 7,
+          div(
+            style = "background-color: #ffffff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);",
+            h3("Cluster Towns", style = "color: #495057; border-bottom: 1px solid #dee2e6; padding-bottom: 10px;"),
+            fluidRow(
+              column(
+                width = 6,
+                div(
+                  style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-right: 10px; height: 100%;",
+                  h4(textOutput("townsTableLabel1"), style = "color: #007bff; margin-bottom: 15px;"),
+                  div(
+                    style = "max-height: 500px; overflow-y: auto; overflow-x: auto;",
+                    tableOutput("townsTable1")
+                  )
+                )
+              ),
+              column(
+                width = 6,
+                div(
+                  style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-left: 10px; height: 100%;",
+                  h4(textOutput("townsTableLabel2"), style = "color: #007bff; margin-bottom: 15px;"),
+                  div(
+                    style = "max-height: 500px; overflow-y: auto; overflow-x: auto;",
+                    tableOutput("townsTable2")
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
     )
   ),
+
   hidden(
     div(
       id = "comparisonPanel",
-      numericInput("n_items", "Number of Relevant items:", value = 10, min = 0, step = 1),
-      h3("Relevant Questions", style = "padding: 10px;"),
-      DT::dataTableOutput("topQuestionsTable"),
-      h3("Cluster Items for Selected Question", style = "padding: 10px;"),
-      div(
-        
-        style = "padding: 10px;",
-        h4(textOutput("cluster1Label")), 
-        tableOutput("cluster1Table"),
-        h4(textOutput("cluster2Label")), 
-        tableOutput("cluster2Table")
-        
+      fluidRow(
+        column(
+          width = 12,
+          div(
+            style = "background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;",
+            fluidRow(
+              column(
+                width = 6,
+                sliderInput("n_items", "Number of Relevant Items:",
+                            min = 0, max = 100, # Set appropriate min/max values
+                            value = 10, step = 1, # Define step size
+                            width = "100%")
+              ),
+              column(
+                width = 6,
+                div(
+                  style = "text-align: right; padding-top: 25px;",
+                  actionButton("backToClusteringPanel", "Back", 
+                               class = "btn-secondary",
+                               style = "margin-right: 10px;"),
+                  downloadButton("downloadPlot", "Download Plot", 
+                                 class = "btn-primary"),
+                  downloadButton("downloadTable", "Download Table",
+                                 class = "btn-primary", style = "margin-left: 10px;")
+                )
+              )
+            )
+          )
+        )
       ),
-      div(
-        style = "flex: 1; padding: 10px;",
-        plotOutput("itemFrequenciesPlot"),
-        downloadButton("downloadPlot", "Download Plot")
-        
-      ),
-      actionButton("backToClusteringPanel", "Back"),
-      verbatimTextOutput("progress_output")
       
+      div(
+        style = "background-color: #ffffff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px;",
+        h3("Relevant Questions", style = "color: #495057; border-bottom: 1px solid #dee2e6; padding-bottom: 10px;"),
+        div(
+          style = "padding: 10px 0;",
+          DT::dataTableOutput("topQuestionsTable")
+        )
+      ),
+      
+      div(
+        style = "background-color: #ffffff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px;",
+        h3("Cluster Items for Selected Question", style = "color: #495057; border-bottom: 1px solid #dee2e6; padding-bottom: 10px;"),
+        fluidRow(
+          column(
+            width = 6,
+            div(
+              style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-right: 10px; height: 100%; overflow-x: auto;",
+              h4(textOutput("cluster1Label"), style = "color: #007bff; margin-bottom: 15px;"), 
+              div(style = "max-height: 300px; overflow-y: auto;",
+                  tableOutput("cluster1Table")
+              )
+            )
+          ),
+          column(
+            width = 6,
+            div(
+              style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-left: 10px; height: 100%; overflow-x: auto;",
+              h4(textOutput("cluster2Label"), style = "color: #007bff; margin-bottom: 15px;"), 
+              div(style = "max-height: 300px; overflow-y: auto;",
+                  tableOutput("cluster2Table")
+              )
+            )
+          )
+        )
+      ),
+      
+      div(
+        style = "background-color: #ffffff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);",
+        h3("Item Frequency Visualization", style = "color: #495057; border-bottom: 1px solid #dee2e6; padding-bottom: 10px;"),
+        div(
+          style = "padding: 10px 0;",
+          plotOutput("itemFrequenciesPlot", height = "400px")
+        )
+      ),
+      
+      verbatimTextOutput("progress_output")
     )
   )
 )
@@ -272,6 +506,117 @@ server <- function(input, output, session) {
       showNotification("Failed to import Locations!", type = "error")
     })
   })
+  
+  output$locationMapPreview <- renderPlot({
+    req(location())
+    locations_data <- location()
+    
+    # Extract valid location points and handle potential issues
+    valid_locations <- locations_data[!is.na(locations_data$X1) & !is.na(locations_data$X2) & 
+                                        is.numeric(locations_data$X1) & is.numeric(locations_data$X2),]
+    
+    # Convert character coordinates to numeric if needed
+    if(is.character(locations_data$X1)) {
+      cat("Converting X1 from character to numeric\n")
+      locations_data$X1 <- as.numeric(gsub(",", ".", locations_data$X1))
+    }
+    if(is.character(locations_data$X2)) {
+      cat("Converting X2 from character to numeric\n")
+      locations_data$X2 <- as.numeric(gsub(",", ".", locations_data$X2))
+      valid_locations <- locations_data[!is.na(locations_data$X1) & !is.na(locations_data$X2),]
+    }
+    
+    if(nrow(valid_locations) == 0) {
+      # If no valid locations, show empty plot with message
+      plot(0, 0, type = "n", axes = TRUE, xlab = "Longitude", ylab = "Latitude", 
+           main = "No valid location data found - check your data format")
+      return()
+    }
+    
+    # Create a basic scatter plot that should always work
+    plot(valid_locations$X2, valid_locations$X1, 
+         pch = 19, col = "blue", cex = 1.2,
+         xlab = "Longitude", ylab = "Latitude", 
+         main = paste("Town Locations (", nrow(valid_locations), " valid points)"))
+    
+    # Add town names if there aren't too many points
+    if(nrow(valid_locations) < 25) {
+      text(valid_locations$X2, valid_locations$X1, 
+           labels = valid_locations$Town, pos = 3, cex = 0.7)
+    }
+    
+    # Draw a box around the plot
+    box()
+  })
+  
+  
+  # Add data summary output
+  output$dataSummary <- renderUI({
+    summary_info <- list()
+    
+    if (!is.null(dist_matrix())) {
+      dist_size <- dim(dist_matrix())
+      summary_info <- c(summary_info, paste0("Distance Matrix: ", dist_size[1], "×", dist_size[2]))
+    }
+    
+    if (!is.null(questions())) {
+      summary_info <- c(summary_info, paste0("Questions: ", length(questions())))
+    }
+    
+    if (!is.null(answers())) {
+      answers_dim <- dim(answers())
+      summary_info <- c(summary_info, paste0("Answers: ", answers_dim[1], " questions × ", answers_dim[2], " towns"))
+    }
+    
+    if (!is.null(location())) {
+      summary_info <- c(summary_info, paste0("Locations: ", nrow(location()), " towns"))
+    }
+    
+    if (!is.null(clusters())) {
+      n_clusters <- length(unique(clusters()$clustering))
+      summary_info <- c(summary_info, paste0("Current Clusters: ", n_clusters))
+    }
+    
+    tagList(
+      if (length(summary_info) > 0) {
+        tags$table(
+          class = "table table-sm",
+          style = "font-size: 0.9rem;",
+          lapply(1:length(summary_info), function(i) {
+            tags$tr(
+              tags$td(style = "font-weight: bold;", names(summary_info)[i] %||% paste0("Data ", i, ":")),
+              tags$td(summary_info[i])
+            )
+          })
+        )
+      } else {
+        div(
+          style = "text-align: center; color: #6c757d; padding: 20px;",
+          "No data loaded yet"
+        )
+      }
+    )
+  })
+  
+  # Add this inside the server function
+  output$downloadClustering <- downloadHandler(
+    filename = function() {
+      paste("clustering-results-", Sys.Date(), ".csv", sep = "")
+    },
+    content = function(file) {
+      req(clusters())
+      clusteringResult <- clusters()
+      
+      # Create a data frame with town names and their cluster assignments
+      result_df <- data.frame(
+        Town = rownames(clusteringResult$membership),
+        Cluster = clusteringResult$clustering
+      )
+      
+      # Write the data frame to a CSV file
+      write.csv(result_df, file, row.names = FALSE)
+    }
+  )
   
   observeEvent(input$performClustering, {
     tryCatch({
@@ -395,6 +740,55 @@ server <- function(input, output, session) {
     })
   })
   
+  observeEvent(input$cluster1, {
+    req(input$cluster1)  # Ensure the input is available
+    
+    # Get the selected cluster number
+    c1 <- get_cluster_number(input$cluster1)
+    
+    # Fetch the list of towns for the selected cluster
+    clusteringResult <- clusters()  # Get clustering result
+    
+    if (c1 == 0) {
+      # If "All Clusters" is selected, display all towns
+      selected_towns <- rownames(clusteringResult$membership)
+    } else {
+      # Get the towns belonging to the selected cluster
+      selected_towns <- rownames(clusteringResult$membership)[clusteringResult$clustering == c1]
+    }
+    
+    output$townsTableLabel1 <- renderText({ paste0("Towns of Cluster ", get_cluster_number(input$cluster1)) })
+    # Render the table with the selected towns
+    output$townsTable1 <- renderTable({
+      data.frame(Towns = selected_towns)
+    })
+  })
+  
+  observeEvent(input$cluster2, {
+    req(input$cluster2)  # Ensure the input is available
+    
+    # Get the selected cluster number
+    c2 <- get_cluster_number(input$cluster2)
+    
+    # Fetch the list of towns for the selected cluster
+    clusteringResult <- clusters()  # Get clustering result
+    
+    if (c2 == 0) {
+      # If "All Clusters" is selected, display all towns
+      selected_towns <- rownames(clusteringResult$membership)
+    } else {
+      # Get the towns belonging to the selected cluster
+      selected_towns <- rownames(clusteringResult$membership)[clusteringResult$clustering == c2]
+    }
+    
+    output$townsTableLabel2 <- renderText({ paste0("Towns of Cluster ", get_cluster_number(input$cluster2)) })
+    # Render the table with the selected towns
+    output$townsTable2 <- renderTable({
+      data.frame(Towns = selected_towns)
+    })
+  })
+  
+  
   observeEvent(input$n_items, {
     tryCatch({
       
@@ -481,6 +875,35 @@ server <- function(input, output, session) {
       ggsave(file, plot = plot_obj(), device = "png")
     }
   )
+  
+  output$downloadTable <- downloadHandler(
+    filename = function() {
+      "relevant_questions_table.csv"
+    },
+    content = function(file) {
+      req(relevantItems())
+      top_questions <- head(relevantItems()$top_questions, input$n_items)
+      
+      # Prepare data for download, including towns
+      df_to_download <- data.frame(
+        Questions = top_questions$galdera,
+        Diferentiation = top_questions$diferentziazioa,
+        Stability1 = top_questions$estabilitatea_1,
+        Stability2 = top_questions$estabilitatea_2,
+        Variability = top_questions$bariabilitatea1_2
+      )
+      
+      # Add Cluster 1 Towns and Cluster 2 Towns. Handle the "All Clusters" case.
+      if (get_cluster_number(input$cluster1) == get_cluster_number(input$cluster2)) {
+        df_to_download$Cluster1Towns <- sapply(1:nrow(top_questions), function(i) paste(relevantItems()$cluster1_items[i,], collapse = ","))
+        df_to_download$Cluster2Towns <- df_to_download$Cluster1Towns # Same towns for both if "All Clusters"
+      } else {
+        df_to_download$Cluster1Towns <- sapply(1:nrow(top_questions), function(i) paste(relevantItems()$cluster1_items[i,], collapse = ","))
+        df_to_download$Cluster2Towns <- sapply(1:nrow(top_questions), function(i) paste(relevantItems()$cluster2_items[i,], collapse = ","))
+      }
+      
+      write.csv(df_to_download, file, row.names = FALSE)
+    })
   
   observeEvent(input$backToClusteringPanel, {
     shinyjs::hide("comparisonPanel")
