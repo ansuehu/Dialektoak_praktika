@@ -5,7 +5,6 @@ library(cluster)
 library(shinycssloaders)
 library(stringdist)
 library(ggplot2)
-library(maps)
 library(parallel)
 
 
@@ -15,17 +14,6 @@ bilbao_d <- function(items1, items2) {
   result <- 1 - (bat / (length(items1) + length(items2)))
   return(result)
 }
-
-# levenshtein_d <- function(items1, items2) {
-#   distances <- stringdistmatrix(items1, items2, method = "lv") 
-#   
-#   max_length <- max(nchar(c(items1, items2)), na.rm = TRUE)
-#   if (max_length == 0) return(1)
-#   
-#   normalized_distance <- sum(distances, na.rm = TRUE) / (length(items1) * length(items2) * max_length)
-#   
-#   return(normalized_distance)
-# }
 
 levenshtein_distance <- function(str1, str2) {
   len1 <- nchar(str1)
@@ -256,33 +244,11 @@ ui <- fluidPage(
         div(
           style = "background-color: #ffffff; padding: 15px; margin-left: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);",
           h3("Dashboard", style = "color: #495057; border-bottom: 1px solid #dee2e6; padding-bottom: 8px;"),
-          
-          div(
-            style = "margin-top: 15px;",
-            conditionalPanel(
-              condition = "input.locationFile",
-              h4("Location Map Preview", style = "color: #6c757d;"),
-              plotOutput("locationMapPreview", height = "200px")  # THIS SHOULD BE plotOutput, NOT leafletOutput
-            ),
-            
-            conditionalPanel(
-              condition = "!input.locationFile",
-              div(
-                style = "height: 200px; display: flex; align-items: center; justify-content: center; background-color: #f8f9fa; border-radius: 4px;",
-                div(
-                  style = "text-align: center;",
-                  icon("map-marker-alt", style = "font-size: 48px; color: #adb5bd;"),
-                  p("Upload location data to see map preview", style = "color: #6c757d; margin-top: 15px;")
-                )
-              )
-            )
-          ),
-          
           div(
             style = "margin-top: 25px;",
             h4("Data Summary", style = "color: #6c757d;"),
             uiOutput("dataSummary")
-          ),
+          )
         )
       )
     )
