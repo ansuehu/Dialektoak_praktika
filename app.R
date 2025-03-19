@@ -851,6 +851,10 @@ server <- function(input, output, session) {
       req(relevantItems())
       top_questions <- head(relevantItems()$top_questions, input$n_items)
       
+      # Get cluster numbers
+      cluster1_num <- get_cluster_number(input$cluster1)
+      cluster2_num <- get_cluster_number(input$cluster2)
+      
       # Prepare data for download, including towns
       df_to_download <- data.frame(
         Questions = top_questions$galdera,
@@ -860,17 +864,28 @@ server <- function(input, output, session) {
         Variability = top_questions$bariabilitatea1_2
       )
       
-      # Add Cluster 1 Towns and Cluster 2 Towns. Handle the "All Clusters" case.
-      if (get_cluster_number(input$cluster1) == get_cluster_number(input$cluster2)) {
-        df_to_download$Cluster1Towns <- sapply(1:nrow(top_questions), function(i) paste(relevantItems()$cluster1_items[i,], collapse = ","))
-        df_to_download$Cluster2Towns <- df_to_download$Cluster1Towns # Same towns for both if "All Clusters"
+      # Handle column naming and ordering based on cluster selection
+      if (cluster1_num == cluster2_num) {
+        # When same cluster is selected, compare it with all other clusters
+        selected_cluster_name <- paste0("Cluster_", cluster1_num)
+        other_clusters_name <- "All_Other_Clusters"
+        
+        # Put selected cluster first, then all other clusters
+        df_to_download[[selected_cluster_name]] <- sapply(1:nrow(top_questions), function(i) 
+          paste(relevantItems()$cluster2_items[i,], collapse = ",")) 
+        df_to_download[[paste0(other_clusters_name, "_Towns")]] <- sapply(1:nrow(top_questions), function(i) 
+            paste(relevantItems()$cluster1_items[i,], collapse = ","))
       } else {
-        df_to_download$Cluster1Towns <- sapply(1:nrow(top_questions), function(i) paste(relevantItems()$cluster1_items[i,], collapse = ","))
-        df_to_download$Cluster2Towns <- sapply(1:nrow(top_questions), function(i) paste(relevantItems()$cluster2_items[i,], collapse = ","))
+        # Different clusters selected - maintain order as shown in UI
+        df_to_download[[paste0("Cluster_", cluster1_num, "_Towns")]] <- sapply(1:nrow(top_questions), function(i) 
+          paste(relevantItems()$cluster1_items[i,], collapse = ","))
+        df_to_download[[paste0("Cluster_", cluster2_num, "_Towns")]] <- sapply(1:nrow(top_questions), function(i) 
+          paste(relevantItems()$cluster2_items[i,], collapse = ","))
       }
       
       write.csv(df_to_download, file, row.names = FALSE)
     })
+  
   
   observeEvent(input$backToClusteringPanel, {
     shinyjs::hide("comparisonPanel")
