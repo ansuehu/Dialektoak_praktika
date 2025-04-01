@@ -7,8 +7,6 @@ library(stringdist)
 library(ggplot2)
 library(parallel)
 
-
-
 bilbao_d <- function(items1, items2) {
   bat <- sum(items1 %in% items2) + sum(items2 %in% items1)
   result <- 1 - (bat / (length(items1) + length(items2)))
@@ -85,7 +83,7 @@ kalkulatu_estabilitatea <- function(answers, membership, galdera, cluster, dista
   if (sum_weights == 0) {
     return(NA)
   } else {
-    return(2 * weighted_sum / sum_weights)
+    return(weighted_sum / sum_weights)
   }
 }
 
@@ -99,7 +97,7 @@ kalkulatu_bariabilitatea <- function(answers, membership, galdera, cluster1, clu
   answers_subset2 <- answers[galdera, elementuak2, drop = FALSE]
   membership_subset1 <- membership[elementuak1, c1]
   membership_subset2 <- membership[elementuak2, c2]
-  
+
   distance_matrix <- outer(answers_subset1, answers_subset2, Vectorize(function(x, y) {
     if (is.na(x) || is.na(y) || x == "" || y == "") {
       return(1)
@@ -107,13 +105,13 @@ kalkulatu_bariabilitatea <- function(answers, membership, galdera, cluster1, clu
       return(distantzia_funtzioa(strsplit(x, ",")[[1]], strsplit(y, ",")[[1]]))
     }
   }))
-  
+
   weights_matrix <- outer(membership_subset1, membership_subset2, "*")
-  
+
   weighted_sum <- sum(distance_matrix * weights_matrix, na.rm = TRUE)
-  
+
   sum_weights <- sum(weights_matrix, na.rm = TRUE)
-  
+
   if (sum_weights == 0) {
     return(NA)
   } else {
@@ -130,7 +128,7 @@ kalkulatu_diferentziazioa <- function(answers, membership, galdera, cluster1, cl
   
   bariabilitatea1_2 <- kalkulatu_bariabilitatea(answers, membership, galdera, cluster1, cluster2, distantzia_funtzioa)
   
-  diferentziazioa = bariabilitatea1_2 / max(estabilitatea1, estabilitatea2, 0.01)
+  diferentziazioa = bariabilitatea1_2 / max(estabilitatea1, estabilitatea2, 0.0001)
   return (data.frame(galdera = galdera, diferentziazioa = round(diferentziazioa, 2), estabilitatea_1 = round(estabilitatea1, 2), estabilitatea_2= round(estabilitatea2, 2), bariabilitatea1_2= round(bariabilitatea1_2, 2)))
 }
 
@@ -659,13 +657,14 @@ server <- function(input, output, session) {
       c2 <- get_cluster_number(input$cluster2)
       
       if (c1 == c2) {
-        indices1 <- which(clusteringResult$clustering != c1)
-        indices2 <- which(clusteringResult$clustering == c2)
+        indices1 <- which(clusteringResult$clustering == c2)
+        indices2 <- which(clusteringResult$clustering != c1)
       } else {
         indices1 <- which(clusteringResult$clustering == c1)
         indices2 <- which(clusteringResult$clustering == c2)
       }
-
+      # print(indices1)
+      # print(indices2)
       cluster1 <- list(cluster = c1, indices = indices1)
       cluster2 <- list(cluster = c2, indices = indices2)
       
@@ -791,12 +790,12 @@ server <- function(input, output, session) {
         relevantItems()$cluster2_items[selectedIndex, , drop = FALSE]
       })
       
+      output$cluster1Label <- renderText({ paste0("Cluster ", get_cluster_number(input$cluster1)) })
       if (get_cluster_number(input$cluster1) == get_cluster_number(input$cluster2)){
-        output$cluster1Label <- renderText({ "All clusters" })
+        output$cluster2Label <- renderText({ "All clusters" })
       } else {
-        output$cluster1Label <- renderText({ paste0("Cluster ", get_cluster_number(input$cluster1)) })
+        output$cluster2Label <- renderText({ paste0("Cluster ", get_cluster_number(input$cluster2)) })
       }
-      output$cluster2Label <- renderText({ paste0("Cluster ", get_cluster_number(input$cluster2)) })
       
       cluster1_items <- unlist(relevantItems()$cluster1_items[selectedIndex, ])
       cluster2_items <- unlist(relevantItems()$cluster2_items[selectedIndex, ])
@@ -808,12 +807,12 @@ server <- function(input, output, session) {
       cluster1_data <- as.data.frame(table(cluster1_items))
       cluster2_data <- as.data.frame(table(cluster2_items))
       
+      cluster1_data$Cluster <- paste0("Cluster ", get_cluster_number(input$cluster1))
       if (get_cluster_number(input$cluster1) == get_cluster_number(input$cluster2)){
-        cluster1_data$Cluster <- "All clusters"
+        cluster2_data$Cluster <- "All clusters"
       } else {
-        cluster1_data$Cluster <- paste0("Cluster ", get_cluster_number(input$cluster1))
+        cluster2_data$Cluster <- paste0("Cluster ", get_cluster_number(input$cluster2))
       }
-      cluster2_data$Cluster <- paste0("Cluster ", get_cluster_number(input$cluster2))
       
       
       colnames(cluster1_data) <- c("Item", "Frequency", "Cluster")
@@ -871,9 +870,9 @@ server <- function(input, output, session) {
         other_clusters_name <- "All_Other_Clusters"
         
         # Put selected cluster first, then all other clusters
-        df_to_download[[selected_cluster_name]] <- sapply(1:nrow(top_questions), function(i) 
+        df_to_download[[other_clusters_name]] <- sapply(1:nrow(top_questions), function(i) 
           paste(relevantItems()$cluster2_items[i,], collapse = ",")) 
-        df_to_download[[paste0(other_clusters_name, "_Towns")]] <- sapply(1:nrow(top_questions), function(i) 
+        df_to_download[[paste0(selected_cluster_name, "_Towns")]] <- sapply(1:nrow(top_questions), function(i) 
             paste(relevantItems()$cluster1_items[i,], collapse = ","))
       } else {
         # Different clusters selected - maintain order as shown in UI
