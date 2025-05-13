@@ -65,6 +65,7 @@ kalkulatu_estabilitatea <- function(answers, membership, galdera, cluster, dista
   
   answers_subset <- answers[galdera, elementuak, drop = FALSE]
   membership_subset <- membership[elementuak, c]
+  print(galdera)
   
   distance_matrix <- outer(answers_subset, answers_subset, Vectorize(function(x, y) {
     if (is.na(x) || is.na(y) || x == "" || y == "") {
@@ -563,7 +564,6 @@ server <- function(input, output, session) {
     )
   })
   
-  # Add this inside the server function
   output$downloadClustering <- downloadHandler(
     filename = function() {
       paste("clustering-results-", Sys.Date(), ".csv", sep = "")
@@ -574,9 +574,10 @@ server <- function(input, output, session) {
       
       # Create a data frame with town names and their cluster assignments
       result_df <- data.frame(
-        Town = rownames(clusteringResult$membership),
-        Cluster = clusteringResult$clustering
+        Town = rownames(clusteringResult$membership)
       )
+      cluster_cols <- paste0("Cluster ", 1:ncol(clusteringResult$membership))
+      result_df[cluster_cols] <- clusteringResult$membership
       
       # Write the data frame to a CSV file
       write.csv(result_df, file, row.names = FALSE)
