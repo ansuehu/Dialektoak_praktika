@@ -65,7 +65,6 @@ kalkulatu_estabilitatea <- function(answers, membership, galdera, cluster, dista
   
   answers_subset <- answers[galdera, elementuak, drop = FALSE]
   membership_subset <- membership[elementuak, c]
-  print(galdera)
   
   distance_matrix <- outer(answers_subset, answers_subset, Vectorize(function(x, y) {
     if (is.na(x) || is.na(y) || x == "" || y == "") {
